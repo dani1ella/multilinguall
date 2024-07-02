@@ -1,13 +1,71 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
+  @override
+  MyAppState createState() => MyAppState();
+}
+
+class MyAppState extends State<MyApp> {
+  late bool isDarkMode;
+  late SharedPreferences prefs;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+    _setupConnectivityListener();
+    _setupBatteryListener();
+  }
+
+  Future<void> _loadTheme() async {
+    prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isDarkMode = prefs.getBool('isDarkMode') ?? false;
+    });
+  }
+
+  void _setupConnectivityListener() {
+    Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Connectivity changed: $result')),
+      );
+    });
+  }
+
+  void _setupBatteryListener() {
+    Battery().onBatteryStateChanged.listen((BatteryState state) async {
+      if (state == BatteryState.charging) {
+        int batteryLevel = await Battery().batteryLevel;
+        if (batteryLevel >= 90) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Battery charged above 90%')),
+          );
+        }
+      }
+    });
+  }
+
+  void _toggleTheme() {
+    setState(() {
+      isDarkMode = !isDarkMode;
+      prefs.setBool('isDarkMode', isDarkMode);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,25 +73,22 @@ class MyApp extends StatelessWidget {
       title: 'Tab & Drawer Navigation App',
       theme: ThemeData(
         primarySwatch: Colors.blue,
-        useMaterial3: true,
-        scaffoldBackgroundColor: Colors.lightBlue[100], // Set background color to sky blue
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(color: Colors.black), // Set text color to black
-          bodyMedium: TextStyle(color: Colors.black), // Set text color to black
-          bodySmall: TextStyle(color: Colors.black), // Set text color to black
-        ),
-        inputDecorationTheme: const InputDecorationTheme(
-          labelStyle: TextStyle(color: Colors.black), // Set label text color to black
-          border: UnderlineInputBorder(), // Set border to underline only
+        brightness: isDarkMode ? Brightness.dark : Brightness.light,
+        scaffoldBackgroundColor: isDarkMode ? Colors.black : Colors.lightBlue[100],
+        textTheme: TextTheme(
+          bodyText1: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+          bodyText2: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
         ),
       ),
-      home: const HomeScreen(),
+      home: HomeScreen(toggleTheme: _toggleTheme),
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback toggleTheme;
+
+  const HomeScreen({required this.toggleTheme, super.key});
 
   @override
   HomeScreenState createState() => HomeScreenState();
@@ -41,7 +96,7 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  //int _currentIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +105,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
   void navigateToTab(int index) {
     setState(() {
-     // _currentIndex = index;
       _tabController.index = index;
     });
   }
@@ -65,7 +119,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dani'),
+        title: const Text('Tab & Drawer Navigation App'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -75,6 +129,12 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           ],
           indicatorColor: Colors.white,
         ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.brightness_6),
+            onPressed: widget.toggleTheme,
+          ),
+        ],
       ),
       drawer: Drawer(
         child: ListView(
@@ -82,7 +142,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           children: [
             const DrawerHeader(
               decoration: BoxDecoration(
-                color: Colors.lightBlue,
+                color: Colors.blue,
               ),
               child: Text('Menu', style: TextStyle(color: Colors.white, fontSize: 24)),
             ),
@@ -121,7 +181,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           const CalculatorScreen(),
         ],
       ),
-
     );
   }
 }
@@ -137,124 +196,133 @@ class SignInScreen extends StatefulWidget {
 }
 
 class SignInScreenState extends State<SignInScreen> {
-  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   String _message = '';
 
-  void _login() {
+  void _login() async {
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _message = 'Login Successful';
-      });
-      widget.onLoginSuccess();
+      try {
+        UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: _emailController.text,
+          password: _passwordController.text,
+        );
+        setState(() {
+          _message = 'Login Successful';
+        });
+        widget.onLoginSuccess();
+      } on FirebaseAuthException catch (e) {
+        setState(() {
+          _message = e.message ?? 'Login failed';
+        });
+      }
     } else {
       setState(() {
-        _message = 'Invalid username or password';
+        _message = 'Invalid email or password';
       });
     }
   }
 
-  void _forgotPassword() {
-    setState(() {
-      _message = 'Forgot Password tapped';
-    });
+  Future<void> _loginWithGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        return;
+      }
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      setState(() {
+        _message = 'Google SignIn Successful';
+      });
+      widget.onLoginSuccess();
+    } catch (e) {
+      setState(() {
+        _message = 'Google SignIn failed: $e';
+      });
+    }
+  }
+
+  Future<void> _loginWithFacebook() async {
+    try {
+      final LoginResult result = await FacebookAuth.instance.login();
+      if (result.status == LoginStatus.success) {
+        final AuthCredential credential = FacebookAuthProvider.credential(result.accessToken!.token);
+        await FirebaseAuth.instance.signInWithCredential(credential);
+        setState(() {
+          _message = 'Facebook SignIn Successful';
+        });
+        widget.onLoginSuccess();
+      } else {
+        setState(() {
+          _message = 'Facebook SignIn failed: ${result.message}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _message = 'Facebook SignIn failed: $e';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              //const Icon(
-                // Icons.lock_outline,
-               // size: 80,
-               // color: Colors.greenAccent,
-             // ),
-              Text(
-                'Welcome Back you\'ve been missed!',
-                style: TextStyle(
-                  color: Colors.grey[700],
-                  fontSize: 20,
-                ),
-              ),
-              const SizedBox(height: 100),
-              TextFormField(
-                controller: _usernameController,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your username';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                ),
-                obscureText: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your password';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: _forgotPassword,
-                child: const Text('Forgot Password?', style: TextStyle(color: Colors.black)),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _login,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: const Text('Login', style: TextStyle(fontSize: 18)),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _message,
-                style: TextStyle(
-                  color: _message == 'Login Successful' ? Colors.green : Colors.red,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: widget.onSignUpTap,
-                child: const Text('Dont have an account? Create a new account!', style: TextStyle(color: Colors.black)),
-              ),
-              ElevatedButton(
-                onPressed: widget.onSignUpTap,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: const Text('Sign Up', style: TextStyle(fontSize: 18)),
-              ),
-            ],
-          ),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            TextFormField(
+              controller: _emailController,
+              decoration: const InputDecoration(labelText: 'Email'),
+              validator: (value) {
+                if (value == null || value.isEmpty || !value.contains('@')) {
+                  return 'Please enter a valid email';
+                }
+                return null;
+              },
+            ),
+            TextFormField(
+              controller: _passwordController,
+              decoration: const InputDecoration(labelText: 'Password'),
+              obscureText: true,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16.0),
+            ElevatedButton(
+              onPressed: _login,
+              child: const Text('Sign In'),
+            ),
+            const SizedBox(height: 8.0),
+            Text(_message, style: const TextStyle(color: Colors.red)),
+            const SizedBox(height: 16.0),
+            ElevatedButton(
+              onPressed: _loginWithGoogle,
+              child: const Text('Sign in with Google'),
+            ),
+            const SizedBox(height: 8.0),
+            ElevatedButton(
+              onPressed: _loginWithFacebook,
+              child: const Text('Sign in with Facebook'),
+            ),
+            const SizedBox(height: 16.0),
+            TextButton(
+              onPressed: widget.onSignUpTap,
+              child: const Text('Don\'t have an account? Sign Up'),
+            ),
+          ],
         ),
       ),
     );
@@ -271,349 +339,97 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class SignUpScreenState extends State<SignUpScreen> {
-  final TextEditingController _fullnameController = TextEditingController();
-  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   String _message = '';
 
-  void _signUp() {
+  void _signUp() async {
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _message = 'Sign Up Successful';
-      });
-      widget.onSignUpSuccess();
+      try {
+        UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: _emailController.text,
+          password: _passwordController.text,
+        );
+        setState(() {
+          _message = 'Sign Up Successful';
+        });
+        widget.onSignUpSuccess();
+      } on FirebaseAuthException catch (e) {
+        setState(() {
+          _message = e.message ?? 'Sign Up failed';
+        });
+      }
     } else {
       setState(() {
-        _message = 'Please fill in all fields';
+        _message = 'Invalid email or password';
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              const Icon(
-                Icons.app_registration,
-                size: 100,
-                color: Colors.black,
-              ),
-              Text(
-                'Create a new account if you don\'t have one!',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _fullnameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  labelStyle: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w300, // Makes the text thinner
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your full name';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _usernameController,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  labelStyle: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w300, // Makes the text thinner
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your username';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  labelStyle: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w300, // Makes the text thinner
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  labelStyle: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w300, // Makes the text thinner
-                  ),
-                ),
-                obscureText: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your password';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _signUp,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: const Text('Create', style: TextStyle(fontSize: 20)),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _message,
-                style: TextStyle(
-                  color: _message == 'Sign Up Successful' ? Colors.green : Colors.red,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            TextFormField(
+              controller: _emailController,
+              decoration: const InputDecoration(labelText: 'Email'),
+              validator: (value) {
+                if (value == null || value.isEmpty || !value.contains('@')) {
+                  return 'Please enter a valid email';
+                }
+                return null;
+              },
+            ),
+            TextFormField(
+              controller: _passwordController,
+              decoration: const InputDecoration(labelText: 'Password'),
+              obscureText: true,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16.0),
+            ElevatedButton(
+              onPressed: _signUp,
+              child: const Text('Sign Up'),
+            ),
+            const SizedBox(height: 8.0),
+            Text(_message, style: const TextStyle(color: Colors.red)),
+          ],
         ),
       ),
     );
   }
 }
 
-class CalculatorScreen extends StatefulWidget {
+class CalculatorScreen extends StatelessWidget {
   const CalculatorScreen({super.key});
 
   @override
-  CalculatorScreenState createState() => CalculatorScreenState();
-}
-
-class CalculatorScreenState extends State<CalculatorScreen> {
-  List<dynamic> inputList = [0];
-  String output = '0';
-
-  void _handleClear() {
-    setState(() {
-      inputList = [0];
-      output = '0';
-    });
-  }
-
-  void _handlePress(String input) {
-    setState(() {
-      if (_isOperator(input)) {
-        if (inputList.last is int) {
-          inputList.add(input);
-          output += input;
-        }
-      } else if (input == '=') {
-        while (inputList.length > 2) {
-          dynamic firstNumber = inputList.removeAt(0);
-          String operator = inputList.removeAt(0);
-          dynamic secondNumber = inputList.removeAt(0);
-          dynamic partialResult;
-
-          if (operator == '+') {
-            partialResult = firstNumber + secondNumber;
-          } else if (operator == '-') {
-            partialResult = firstNumber - secondNumber;
-          } else if (operator == '*') {
-            partialResult = firstNumber * secondNumber;
-          } else if (operator == '/') {
-            partialResult = firstNumber ~/ secondNumber;
-            // Protect against division by zero
-            if (secondNumber == 0) {
-              partialResult = firstNumber;
-            }
-          }
-
-          inputList.insert(0, partialResult);
-        }
-
-        output = '${inputList[0]}';
-      } else if (_isTrigOperator(input)) {
-        if (inputList.length == 1 && inputList[0] is int) {
-          int number = inputList[0];
-          double result;
-
-          if (input == 'sin') {
-            result = sin(number * pi / 180);
-          } else if (input == 'cos') {
-            result = cos(number * pi / 180);
-          } else if (input == 'tan') {
-            result = tan(number * pi / 180);
-          } else {
-            result = number.toDouble();
-          }
-
-          inputList = [result];
-          output = result.toString();
-        }
-      } else {
-        int? inputNumber = int.tryParse(input);
-        if (inputNumber != null) {
-          if (inputList.last is int && !_isOperator(output[output.length - 1])) {
-            int lastNumber = (inputList.last as int);
-            lastNumber = lastNumber * 10 + inputNumber;
-            inputList.last = lastNumber;
-
-            output = output.substring(0, output.length - 1) + lastNumber.toString();
-          } else {
-            inputList.add(inputNumber);
-            output += input;
-          }
-        }
-      }
-    });
-  }
-
-  bool _isOperator(String input) {
-    return (input == "+" || input == "-" || input == "*" || input == "/");
-  }
-
-  bool _isTrigOperator(String input) {
-    return (input == "sin" || input == "cos" || input == "tan");
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Calculator")),
-      body: Container(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: <Widget>[
-            Container(
-              child: TextField(
-                style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Colors.black),
-                textAlign: TextAlign.right,
-                decoration: const InputDecoration(
-                  border: UnderlineInputBorder(), // Only underline border
-                ),
-                controller: TextEditingController()..text = output,
-                readOnly: true,
-              ),
-            ),
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 4,
-                children: <Widget>[
-                  for (var i = 0; i <= 9; i++)
-                    TextButton(
-                      style: TextButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                      ),
-                      child: Text("$i", style: const TextStyle(fontSize: 20, color: Colors.black)),
-                      onPressed: () => _handlePress("$i"),
-                    ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                    ),
-                    child: const Text("C", style: TextStyle(fontSize: 20, color: Colors.black)),
-                    onPressed: _handleClear,
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("+", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("+"),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("-", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("-"),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("*", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("*"),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("/", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("/"),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("sin", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("sin"),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("cos", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("cos"),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("tan", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("tan"),
-                  ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text("=", style: TextStyle(fontSize: 20, color: Colors.white)),
-                    onPressed: () => _handlePress("="),
-                  ),
-                ],
-              ),
-            )
-          ],
-        ),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const <Widget>[
+          Text(
+            'Calculator',
+            style: TextStyle(fontSize: 32),
+          ),
+          SizedBox(height: 20),
+          Text(
+            'Add your calculator UI here',
+            style: TextStyle(fontSize: 20),
+          ),
+        ],
       ),
     );
   }
