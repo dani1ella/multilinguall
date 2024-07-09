@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "276321714727",
+    "project_id": "broadcast-caa49",
+    "storage_bucket": "broadcast-caa49.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:276321714727:android:9967523b602bfb24dd4402",
+        "android_client_info": {
+          "package_name": "Flutter_1.materials"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCrgK5cvzqgZk8g8jHPjDSO1Xo1zMDUr-E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -6,6 +6,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+import 'package:contacts_service/contacts_service.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/intl.dart';
+import 'dart:io';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,10 +81,19 @@ class MyAppState extends State<MyApp> {
         brightness: isDarkMode ? Brightness.dark : Brightness.light,
         scaffoldBackgroundColor: isDarkMode ? Colors.black : Colors.lightBlue[100],
         textTheme: TextTheme(
-          bodyText1: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
-          bodyText2: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+          bodyLarge: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+          bodyMedium: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
         ),
       ),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', ''),
+        Locale('es', ''),
+      ],
       home: HomeScreen(toggleTheme: _toggleTheme),
     );
   }
@@ -125,13 +139,13 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           tabs: const [
             Tab(icon: Icon(Icons.login), text: 'Sign In'),
             Tab(icon: Icon(Icons.app_registration), text: 'Sign Up'),
-            Tab(icon: Icon(Icons.calculate), text: 'Calculator'),
+            Tab(icon: Icon(Icons.contacts), text: 'Contacts'),
           ],
           indicatorColor: Colors.white,
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.brightness_6),
+            icon: const Icon(Icons.brightness_6),
             onPressed: widget.toggleTheme,
           ),
         ],
@@ -163,8 +177,8 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
               },
             ),
             ListTile(
-              leading: const Icon(Icons.calculate),
-              title: const Text('Calculator'),
+              leading: const Icon(Icons.contacts),
+              title: const Text('Contacts'),
               onTap: () {
                 navigateToTab(2);
                 Navigator.pop(context);
@@ -178,7 +192,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
         children: [
           SignInScreen(onLoginSuccess: () => navigateToTab(2), onSignUpTap: () => navigateToTab(1)),
           SignUpScreen(onSignUpSuccess: () => navigateToTab(0)),
-          const CalculatorScreen(),
+          const ContactsScreen(),
         ],
       ),
     );
@@ -411,25 +425,87 @@ class SignUpScreenState extends State<SignUpScreen> {
   }
 }
 
-class CalculatorScreen extends StatelessWidget {
-  const CalculatorScreen({super.key});
+class ContactsScreen extends StatefulWidget {
+  const ContactsScreen({super.key});
+
+  @override
+  _ContactsScreenState createState() => _ContactsScreenState();
+}
+
+class _ContactsScreenState extends State<ContactsScreen> {
+  Iterable<Contact> _contacts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchContacts();
+  }
+
+  Future<void> _fetchContacts() async {
+    Iterable<Contact> contacts = await ContactsService.getContacts();
+    setState(() {
+      _contacts = contacts;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: const <Widget>[
-          Text(
-            'Calculator',
-            style: TextStyle(fontSize: 32),
-          ),
-          SizedBox(height: 20),
-          Text(
-            'Add your calculator UI here',
-            style: TextStyle(fontSize: 20),
-          ),
-        ],
+    return ListView.builder(
+      itemCount: _contacts.length,
+      itemBuilder: (context, index) {
+        Contact contact = _contacts.elementAt(index);
+        return ListTile(
+          title: Text(contact.displayName ?? ''),
+          subtitle: Text(contact.phones!.isNotEmpty ? contact.phones!.first.value! : 'No phone number'),
+        );
+      },
+    );
+  }
+}
+
+class EditProfilePictureScreen extends StatefulWidget {
+  const EditProfilePictureScreen({super.key});
+
+  @override
+  _EditProfilePictureScreenState createState() => _EditProfilePictureScreenState();
+}
+
+class _EditProfilePictureScreenState extends State<EditProfilePictureScreen> {
+  File? _image;
+
+  Future<void> _pickImage(ImageSource source) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: source);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Edit Profile Picture'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            _image != null
+                ? Image.file(_image!)
+                : const Text('No image selected.'),
+            ElevatedButton(
+              onPressed: () => _pickImage(ImageSource.gallery),
+              child: const Text('Select from Gallery'),
+            ),
+            ElevatedButton(
+              onPressed: () => _pickImage(ImageSource.camera),
+              child: const Text('Take a Picture'),
+            ),
+          ],
+        ),
       ),
     );
   }
