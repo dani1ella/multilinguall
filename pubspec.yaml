@@ -23,7 +23,10 @@ dependencies:
   flutter_facebook_auth: ^5.0.5
   contacts_service: ^0.6.3
   image_picker: ^0.8.5+3
-
+    assets:
+    - assets/languages/en.json
+    - assets/languages/es.json
+    - assets/languages/de.json
 dev_dependencies:
   flutter_test:
     sdk: flutter
